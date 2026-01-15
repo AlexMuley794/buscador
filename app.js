@@ -3,7 +3,7 @@ const CONFIG = {
     // API Key de Google Maps configurada ✅
     // Obtén tu API key en: https://console.cloud.google.com/
     // Necesitas habilitar: Places API, Maps JavaScript API, Geocoding API
-    GOOGLE_MAPS_API_KEY: 'AIzaSyDjuYD0wQFC44u0PzR5dFdTUKTmg572rE4',
+    GOOGLE_MAPS_API_KEY: (typeof ENV !== 'undefined' && ENV.GOOGLE_MAPS_API_KEY) ? ENV.GOOGLE_MAPS_API_KEY : 'YOUR_API_KEY',
     DEFAULT_COUNTRY: 'ES',
     SEARCH_RADIUS: 5000, // 5km radius (máximo 50000)
     MAX_RESULTS: 20,

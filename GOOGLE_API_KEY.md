@@ -80,31 +80,22 @@ Google requiere una tarjeta de crédito, pero ofrece:
 
 ## 🔧 Configurar la Aplicación
 
-### Opción 1: Editar app.js
-
-1. Abre el archivo `app.js`
-2. Busca la línea 6:
-```javascript
-GOOGLE_MAPS_API_KEY: 'YOUR_API_KEY',
-```
-3. Reemplaza `YOUR_API_KEY` con tu clave real:
-```javascript
-GOOGLE_MAPS_API_KEY: 'AIzaSyD...',  // Tu clave aquí
-```
-4. Guarda el archivo
-
-### Opción 2: Editar index.html
-
-1. Abre el archivo `index.html`
-2. Busca la línea 133:
-```html
-<script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=places&callback=initMap" async defer></script>
-```
-3. Reemplaza `YOUR_API_KEY` con tu clave real:
-```html
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD...&libraries=places&callback=initMap" async defer></script>
-```
-4. Guarda el archivo
+## 🔧 Configurar la Aplicación (Modo Seguro)
+ 
+ Para evitar subir tu clave API a GitHub accidentalmente, usamos un archivo `env.js` que es ignorado por git.
+ 
+ 1. Crea un archivo llamado `env.js` en la carpeta raíz del proyecto.
+ 2. Pega el siguiente contenido dentro de `env.js`:
+ 
+ ```javascript
+ const ENV = {
+     GOOGLE_MAPS_API_KEY: 'PEGA_TU_CLAVE_AQUI_SIN_BORRAR_LAS_COMILLAS'
+ };
+ ```
+ 
+ 3. Reemplaza `PEGA_TU_CLAVE_AQUI...` con tu clave real (ej: `AIzaSyD...`).
+ 4. Guarda el archivo.
+ 5. ¡Listo! La aplicación leerá automáticamente la clave de este archivo.
 
 ---
 

@@ -252,10 +252,25 @@
     </div>
 
     <script src="messages.js"></script>
+    <!-- Cargar variables de entorno (API Keys) - Este archivo está ignorado por git -->
+    <script src="env.js"></script>
     <script src="app.js"></script>
-    <script
-        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDjuYD0wQFC44u0PzR5dFdTUKTmg572rE4&libraries=places&callback=initMap"
-        async defer></script>
+    
+    <!-- Carga dinámica de Google Maps -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof ENV !== 'undefined' && ENV.GOOGLE_MAPS_API_KEY) {
+                const script = document.createElement('script');
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${ENV.GOOGLE_MAPS_API_KEY}&libraries=places&callback=initMap`;
+                script.async = true;
+                script.defer = true;
+                document.body.appendChild(script);
+            } else {
+                console.warn('⚠️ API Key de Google Maps no encontrada en env.js');
+                console.log('Puedes crear un archivo env.js con: const ENV = { GOOGLE_MAPS_API_KEY: "TU_CLAVE" };');
+            }
+        });
+    </script>
 </body>
 
 </html>
