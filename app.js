@@ -1,0 +1,1504 @@
+// Configuration
+const CONFIG = {
+    // API Key de Google Maps configurada ✅
+    // Obtén tu API key en: https://console.cloud.google.com/
+    // Necesitas habilitar: Places API, Maps JavaScript API, Geocoding API
+    GOOGLE_MAPS_API_KEY: 'AIzaSyDjuYD0wQFC44u0PzR5dFdTUKTmg572rE4',
+    DEFAULT_COUNTRY: 'ES',
+    SEARCH_RADIUS: 5000, // 5km radius (máximo 50000)
+    MAX_RESULTS: 20,
+    USE_GOOGLE_PLACES: true // true = Google Places (RECOMENDADO), false = OpenStreetMap
+};
+
+// State Management
+const state = {
+    currentPostalCode: '',
+    businesses: [],
+    map: null,
+    markers: [],
+    selectedBusiness: null,
+    currentView: 'list'
+};
+
+// Initialize app when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    initializeEventListeners();
+    checkAPIKeyConfiguration();
+});
+
+// Verificar configuración de API Key
+function checkAPIKeyConfiguration() {
+    if (CONFIG.USE_GOOGLE_PLACES && CONFIG.GOOGLE_MAPS_API_KEY === 'YOUR_API_KEY') {
+        // Mostrar alerta informativa
+        setTimeout(() => {
+            const message = `
+⚠️ CONFIGURACIÓN REQUERIDA
+
+Para ver NEGOCIOS REALES de Google Maps, necesitas configurar tu API Key.
+
+📋 PASOS RÁPIDOS:
+
+1. Lee el archivo: GOOGLE_API_KEY.md
+2. Obtén tu API Key gratis en: https://console.cloud.google.com/
+3. Edita app.js línea 6 y pega tu API Key
+4. Edita index.html línea 133 y pega tu API Key
+5. Recarga esta página
+
+💡 ALTERNATIVA SIN API KEY:
+En app.js línea 10, cambia:
+USE_GOOGLE_PLACES: false
+
+Esto usará OpenStreetMap (menos negocios pero gratis y sin configuración).
+
+¿Quieres continuar con OpenStreetMap por ahora?
+            `.trim();
+
+            if (confirm(message)) {
+                // Cambiar temporalmente a OpenStreetMap
+                CONFIG.USE_GOOGLE_PLACES = false;
+                console.log('✅ Usando OpenStreetMap temporalmente');
+                console.log('📖 Lee GOOGLE_API_KEY.md para configurar Google Places');
+            }
+        }, 1000);
+    } else if (CONFIG.USE_GOOGLE_PLACES && CONFIG.GOOGLE_MAPS_API_KEY !== 'YOUR_API_KEY') {
+        console.log('✅ Google Places API configurada correctamente');
+        console.log('🔑 API Key:', CONFIG.GOOGLE_MAPS_API_KEY.substring(0, 10) + '...');
+    } else {
+        console.log('ℹ️ Usando OpenStreetMap');
+        console.log('💡 Para usar Google Places, lee GOOGLE_API_KEY.md');
+    }
+}
+
+// Initialize Google Maps
+function initMap() {
+    console.log('Google Maps API loaded');
+    if (CONFIG.GOOGLE_MAPS_API_KEY !== 'YOUR_API_KEY') {
+        console.log('✅ Google Maps cargado correctamente');
+    }
+}
+
+// Event Listeners
+function initializeEventListeners() {
+    const searchBtn = document.getElementById('searchBtn');
+    const postalCodeInput = document.getElementById('postalCodeInput');
+    const listViewBtn = document.getElementById('listViewBtn');
+    const mapViewBtn = document.getElementById('mapViewBtn');
+    const closeModal = document.getElementById('closeModal');
+    const retryBtn = document.getElementById('retryBtn');
+    const openInNewTab = document.getElementById('openInNewTab');
+
+    searchBtn.addEventListener('click', handleSearch);
+    postalCodeInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleSearch();
+    });
+
+    listViewBtn.addEventListener('click', () => switchView('list'));
+    mapViewBtn.addEventListener('click', () => switchView('map'));
+
+    closeModal.addEventListener('click', closeWebsiteModal);
+    retryBtn.addEventListener('click', handleSearch);
+    openInNewTab.addEventListener('click', openWebsiteInNewTab);
+
+    // Close modal on overlay click
+    document.querySelector('.modal-overlay')?.addEventListener('click', closeWebsiteModal);
+}
+
+// Search Handler
+async function handleSearch() {
+    const postalCodeInput = document.getElementById('postalCodeInput');
+    const postalCode = postalCodeInput.value.trim();
+
+    if (!postalCode) {
+        showError('Por favor, introduce un código postal válido');
+        return;
+    }
+
+    state.currentPostalCode = postalCode;
+    showLoading();
+
+    try {
+        // Get coordinates from postal code
+        const coordinates = await getCoordinatesFromPostalCode(postalCode);
+
+        // Search for nearby businesses
+        const businesses = await searchNearbyBusinesses(coordinates);
+
+        if (businesses.length === 0) {
+            showError('No se encontraron negocios en esta área. Intenta con otro código postal.');
+            return;
+        }
+
+        state.businesses = businesses;
+        displayResults(businesses);
+
+    } catch (error) {
+        console.error('Search error:', error);
+        showError(error.message || 'Error al buscar negocios. Por favor, intenta de nuevo.');
+    }
+}
+
+// Get coordinates from postal code using Nominatim API (OpenStreetMap)
+async function getCoordinatesFromPostalCode(postalCode) {
+    try {
+        // Use Nominatim API for geocoding (free and no API key required)
+        const nominatimUrl = `https://nominatim.openstreetmap.org/search?postalcode=${postalCode}&country=${CONFIG.DEFAULT_COUNTRY}&format=json&limit=1`;
+
+        const response = await fetch(nominatimUrl, {
+            headers: {
+                'User-Agent': 'BuscaNegocios/1.0' // Required by Nominatim
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Error al obtener coordenadas');
+        }
+
+        const data = await response.json();
+
+        if (data && data.length > 0) {
+            return {
+                lat: parseFloat(data[0].lat),
+                lng: parseFloat(data[0].lon)
+            };
+        }
+
+        // If no results, try fallback coordinates for common Spanish postal codes
+        return getFallbackCoordinates(postalCode);
+
+    } catch (error) {
+        console.error('Geocoding error:', error);
+        return getFallbackCoordinates(postalCode);
+    }
+}
+
+// Fallback coordinates for common Spanish postal codes
+function getFallbackCoordinates(postalCode) {
+    const mockCoordinates = {
+        '28001': { lat: 40.4168, lng: -3.7038 }, // Madrid
+        '28002': { lat: 40.4200, lng: -3.7050 },
+        '28013': { lat: 40.4200, lng: -3.7100 },
+        '08001': { lat: 41.3851, lng: 2.1734 },  // Barcelona
+        '08002': { lat: 41.3800, lng: 2.1750 },
+        '08003': { lat: 41.3850, lng: 2.1800 },
+        '41001': { lat: 37.3891, lng: -5.9845 }, // Sevilla
+        '41002': { lat: 37.3900, lng: -5.9900 },
+        '46001': { lat: 39.4699, lng: -0.3763 }, // Valencia
+        '46002': { lat: 39.4750, lng: -0.3800 },
+        '29001': { lat: 36.7213, lng: -4.4214 }, // Málaga
+        '29002': { lat: 36.7250, lng: -4.4250 },
+        '48001': { lat: 43.2630, lng: -2.9350 }, // Bilbao
+        '50001': { lat: 41.6488, lng: -0.8891 }, // Zaragoza
+        '03001': { lat: 38.3452, lng: -0.4815 }, // Alicante
+        '30001': { lat: 37.9922, lng: -1.1307 }, // Murcia
+        '15001': { lat: 43.3623, lng: -8.4115 }, // A Coruña
+        '33001': { lat: 43.3614, lng: -5.8593 }, // Oviedo
+        '47001': { lat: 41.6523, lng: -4.7245 }, // Valladolid
+        '18001': { lat: 37.1773, lng: -3.5986 }  // Granada
+    };
+
+    // Check if we have exact match
+    if (mockCoordinates[postalCode]) {
+        return mockCoordinates[postalCode];
+    }
+
+    // Try to match by first 2 digits (province)
+    const province = postalCode.substring(0, 2);
+    for (const [key, coords] of Object.entries(mockCoordinates)) {
+        if (key.startsWith(province)) {
+            // Add small random offset
+            return {
+                lat: coords.lat + (Math.random() - 0.5) * 0.05,
+                lng: coords.lng + (Math.random() - 0.5) * 0.05
+            };
+        }
+    }
+
+    // Default to Madrid with random offset
+    return {
+        lat: 40.4168 + (Math.random() - 0.5) * 0.1,
+        lng: -3.7038 + (Math.random() - 0.5) * 0.1
+    };
+}
+
+// Extraer código postal de una dirección
+function extractPostalCode(address) {
+    if (!address) return null;
+
+    // Buscar patrón de código postal español (5 dígitos)
+    const postalCodeMatch = address.match(/\b(\d{5})\b/);
+    return postalCodeMatch ? postalCodeMatch[1] : null;
+}
+
+// Verificar si un código postal coincide exactamente con el código postal buscado
+function isPostalCodeNearby(searchedPostalCode, businessPostalCode) {
+    if (!searchedPostalCode || !businessPostalCode) return false; // Si no hay código, rechazar
+
+    // Comparación exacta de códigos postales
+    // Solo se mostrarán negocios con el código postal exacto introducido
+    return searchedPostalCode === businessPostalCode;
+}
+
+// Search for nearby businesses using Overpass API (OpenStreetMap)
+async function searchNearbyBusinesses(coordinates) {
+    // Si USE_GOOGLE_PLACES está activado y tenemos API key, usar Google Places
+    if (CONFIG.USE_GOOGLE_PLACES && CONFIG.GOOGLE_MAPS_API_KEY !== 'YOUR_API_KEY' && typeof google !== 'undefined') {
+        return searchWithGooglePlaces(coordinates);
+    }
+
+    // Fallback a OpenStreetMap
+    return searchWithOpenStreetMap(coordinates);
+}
+
+// Buscar negocios con Google Places API (DATOS REALES DE GOOGLE MAPS)
+async function searchWithGooglePlaces(coordinates) {
+    return new Promise((resolve, reject) => {
+        // Crear el mapa temporalmente si no existe
+        if (!state.map) {
+            const mapDiv = document.getElementById('map');
+            state.map = new google.maps.Map(mapDiv, {
+                center: coordinates,
+                zoom: 14
+            });
+        }
+
+        // Crear servicio de Places
+        const service = new google.maps.places.PlacesService(state.map);
+
+        // Buscar negocios cercanos
+        const request = {
+            location: new google.maps.LatLng(coordinates.lat, coordinates.lng),
+            radius: CONFIG.SEARCH_RADIUS,
+            // Tipos de negocios a buscar
+            types: ['restaurant', 'cafe', 'store', 'pharmacy', 'bank', 'hospital',
+                'gym', 'bakery', 'book_store', 'clothing_store', 'electronics_store',
+                'florist', 'furniture_store', 'hardware_store', 'jewelry_store',
+                'shoe_store', 'shopping_mall', 'supermarket', 'beauty_salon',
+                'hair_care', 'spa', 'dentist', 'doctor', 'veterinary_care']
+        };
+
+        service.nearbySearch(request, async (results, status) => {
+            if (status === google.maps.places.PlacesServiceStatus.OK) {
+                // Obtener detalles completos de cada negocio (incluyendo teléfono)
+                const businessPromises = results.slice(0, CONFIG.MAX_RESULTS).map((place) => {
+                    return new Promise((resolveDetails) => {
+                        // Solicitar detalles completos del negocio
+                        service.getDetails({
+                            placeId: place.place_id,
+                            fields: ['name', 'formatted_phone_number', 'international_phone_number',
+                                'website', 'opening_hours', 'formatted_address', 'url']
+                        }, (details, detailsStatus) => {
+                            // Obtener categoría e icono
+                            const { category, icon } = getBusinessCategoryFromGoogleTypes(place.types);
+
+                            // Obtener fotos
+                            const photos = [];
+                            if (place.photos && place.photos.length > 0) {
+                                // Tomar hasta 3 fotos
+                                for (let i = 0; i < Math.min(3, place.photos.length); i++) {
+                                    photos.push(place.photos[i].getUrl({ maxWidth: 800, maxHeight: 600 }));
+                                }
+                            } else {
+                                photos.push(...generatePhotos(category));
+                            }
+
+                            // Obtener horarios formateados
+                            let hoursText = 'Horario no disponible';
+                            let isOpen = false;
+
+                            if (details && details.opening_hours) {
+                                isOpen = details.opening_hours.isOpen?.() || false;
+                                hoursText = isOpen ? '🟢 Abierto ahora' : '🔴 Cerrado';
+
+                                // Si está abierto, mostrar horario de hoy
+                                if (details.opening_hours.weekday_text && details.opening_hours.weekday_text.length > 0) {
+                                    const today = new Date().getDay();
+                                    const dayIndex = today === 0 ? 6 : today - 1; // Ajustar domingo
+                                    if (details.opening_hours.weekday_text[dayIndex]) {
+                                        hoursText += ' • ' + details.opening_hours.weekday_text[dayIndex];
+                                    }
+                                }
+                            } else if (place.opening_hours) {
+                                isOpen = place.opening_hours.isOpen?.() || false;
+                                hoursText = isOpen ? '🟢 Abierto ahora' : '🔴 Cerrado';
+                            }
+
+                            // Obtener teléfono (REAL del negocio)
+                            let phone = 'No disponible';
+                            if (details && details.formatted_phone_number) {
+                                phone = details.formatted_phone_number;
+                            } else if (details && details.international_phone_number) {
+                                phone = details.international_phone_number;
+                            }
+
+                            // Obtener dirección
+                            let address = place.vicinity || place.formatted_address || 'Dirección no disponible';
+                            if (details && details.formatted_address) {
+                                address = details.formatted_address;
+                            }
+
+                            // Obtener website
+                            let website = null;
+                            if (details && details.website) {
+                                website = details.website;
+                            } else if (place.website) {
+                                website = place.website;
+                            }
+
+                            // Obtener URL de Google Maps
+                            let googleMapsUrl = null;
+                            if (details && details.url) {
+                                googleMapsUrl = details.url;
+                            }
+
+                            // Intentar extraer email del dominio del website
+                            // Nota: Google Places API NO proporciona emails directamente
+                            // Esta es una aproximación común: info@dominio.com
+                            let email = null;
+                            if (website) {
+                                try {
+                                    const domain = new URL(website).hostname.replace('www.', '');
+                                    // Sugerir email común basado en el dominio
+                                    email = `info@${domain}`;
+                                } catch (e) {
+                                    email = null;
+                                }
+                            }
+
+                            resolveDetails({
+                                id: `google_${place.place_id}`,
+                                placeId: place.place_id,
+                                name: place.name,
+                                category: category,
+                                icon: icon,
+                                address: address,
+                                phone: phone,
+                                email: email, // Email inferido del website
+                                rating: place.rating || 0,
+                                reviewCount: place.user_ratings_total || 0,
+                                hours: hoursText,
+                                isOpen: isOpen,
+                                photos: photos,
+                                coordinates: {
+                                    lat: place.geometry.location.lat(),
+                                    lng: place.geometry.location.lng()
+                                },
+                                description: generateDescription(category),
+                                website: website,
+                                googleMapsUrl: googleMapsUrl,
+                                googleData: place,
+                                priceLevel: place.price_level || 0
+                            });
+                        });
+                    });
+                });
+
+                // Esperar a que se obtengan todos los detalles
+                let businesses = await Promise.all(businessPromises);
+
+                // Filtrar por código postal si tenemos uno buscado
+                if (state.currentPostalCode) {
+                    const searchedPostalCode = state.currentPostalCode;
+
+                    businesses = businesses.filter(business => {
+                        const businessPostalCode = extractPostalCode(business.address);
+                        const isNearby = isPostalCodeNearby(searchedPostalCode, businessPostalCode);
+
+                        // Log para debugging
+                        if (!isNearby && businessPostalCode) {
+                            console.log(`Filtrado: ${business.name} (CP: ${businessPostalCode}) - Buscado: ${searchedPostalCode}`);
+                        }
+
+                        return isNearby;
+                    });
+
+                    console.log(`Resultados filtrados: ${businesses.length} negocios en el área del CP ${searchedPostalCode}`);
+                }
+
+                resolve(businesses);
+
+
+            } else if (status === google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
+                // Si no hay resultados, usar fallback
+                console.log('No se encontraron resultados en Google Places, usando fallback');
+                resolve(generateMockBusinesses(coordinates, 10));
+            } else {
+                console.error('Error en Google Places:', status);
+                // Fallback a OpenStreetMap
+                searchWithOpenStreetMap(coordinates).then(resolve).catch(reject);
+            }
+        });
+    });
+}
+
+// Obtener categoría desde los tipos de Google Places
+function getBusinessCategoryFromGoogleTypes(types) {
+    const typeMap = {
+        'restaurant': { category: 'Restaurante', icon: '🍽️' },
+        'cafe': { category: 'Cafetería', icon: '☕' },
+        'bar': { category: 'Bar', icon: '🍺' },
+        'food': { category: 'Comida', icon: '🍔' },
+        'pharmacy': { category: 'Farmacia', icon: '💊' },
+        'bank': { category: 'Banco', icon: '🏦' },
+        'hospital': { category: 'Hospital', icon: '🏥' },
+        'doctor': { category: 'Médico', icon: '👨‍⚕️' },
+        'dentist': { category: 'Dentista', icon: '🦷' },
+        'veterinary_care': { category: 'Veterinaria', icon: '🐾' },
+        'gym': { category: 'Gimnasio', icon: '💪' },
+        'spa': { category: 'Spa', icon: '💆' },
+        'beauty_salon': { category: 'Salón de Belleza', icon: '💅' },
+        'hair_care': { category: 'Peluquería', icon: '💇' },
+        'store': { category: 'Tienda', icon: '🛍️' },
+        'supermarket': { category: 'Supermercado', icon: '🛒' },
+        'shopping_mall': { category: 'Centro Comercial', icon: '🏬' },
+        'clothing_store': { category: 'Ropa', icon: '👔' },
+        'shoe_store': { category: 'Zapatería', icon: '👞' },
+        'jewelry_store': { category: 'Joyería', icon: '💎' },
+        'electronics_store': { category: 'Electrónica', icon: '📱' },
+        'furniture_store': { category: 'Muebles', icon: '🛋️' },
+        'hardware_store': { category: 'Ferretería', icon: '🔨' },
+        'book_store': { category: 'Librería', icon: '📚' },
+        'bakery': { category: 'Panadería', icon: '🥖' },
+        'florist': { category: 'Floristería', icon: '🌸' },
+        'gas_station': { category: 'Gasolinera', icon: '⛽' },
+        'car_repair': { category: 'Taller', icon: '🔧' },
+        'laundry': { category: 'Lavandería', icon: '🧺' },
+        'post_office': { category: 'Correos', icon: '📮' },
+        'library': { category: 'Biblioteca', icon: '📚' }
+    };
+
+    // Buscar el primer tipo que coincida
+    for (const type of types) {
+        if (typeMap[type]) {
+            return typeMap[type];
+        }
+    }
+
+    // Default
+    return { category: 'Negocio', icon: '🏪' };
+}
+
+// Buscar con OpenStreetMap (Fallback)
+async function searchWithOpenStreetMap(coordinates) {
+    try {
+        // Use Overpass API to get real businesses from OpenStreetMap
+        const radius = CONFIG.SEARCH_RADIUS;
+        const overpassQuery = `
+            [out:json][timeout:25];
+            (
+                node["shop"](around:${radius},${coordinates.lat},${coordinates.lng});
+                node["amenity"~"restaurant|cafe|bar|fast_food|pharmacy|bank|clinic|dentist|doctors|hospital|veterinary|fuel|library|post_office"](around:${radius},${coordinates.lat},${coordinates.lng});
+                node["office"](around:${radius},${coordinates.lat},${coordinates.lng});
+                way["shop"](around:${radius},${coordinates.lat},${coordinates.lng});
+                way["amenity"~"restaurant|cafe|bar|fast_food|pharmacy|bank|clinic|dentist|doctors|hospital|veterinary|fuel|library|post_office"](around:${radius},${coordinates.lat},${coordinates.lng});
+                way["office"](around:${radius},${coordinates.lat},${coordinates.lng});
+            );
+            out center body;
+            >;
+            out skel qt;
+        `;
+
+        const overpassUrl = 'https://overpass-api.de/api/interpreter';
+        const response = await fetch(overpassUrl, {
+            method: 'POST',
+            body: 'data=' + encodeURIComponent(overpassQuery)
+        });
+
+        if (!response.ok) {
+            throw new Error('Error al buscar negocios');
+        }
+
+        const data = await response.json();
+        const businesses = [];
+
+        // Process the results
+        const elements = data.elements || [];
+        const processedIds = new Set();
+
+        for (const element of elements) {
+            // Skip if already processed or no name
+            if (processedIds.has(element.id) || !element.tags || !element.tags.name) {
+                continue;
+            }
+
+            processedIds.add(element.id);
+
+            // Get coordinates
+            let lat, lng;
+            if (element.lat && element.lon) {
+                lat = element.lat;
+                lng = element.lon;
+            } else if (element.center) {
+                lat = element.center.lat;
+                lng = element.center.lon;
+            } else {
+                continue;
+            }
+
+            // Determine business type and icon
+            const { category, icon } = getBusinessTypeAndIcon(element.tags);
+
+            // Get address
+            const address = getAddress(element.tags);
+
+            // Get phone
+            const phone = element.tags.phone || element.tags['contact:phone'] || generatePhone();
+
+            // Get opening hours
+            const hours = element.tags.opening_hours || generateHours();
+
+            // Generate rating (since OSM doesn't have ratings)
+            const rating = (Math.random() * 1.5 + 3.5).toFixed(1);
+            const reviewCount = Math.floor(Math.random() * 300) + 10;
+
+            businesses.push({
+                id: `osm_${element.id}`,
+                name: element.tags.name,
+                category: category,
+                icon: icon,
+                address: address,
+                phone: phone,
+                rating: parseFloat(rating),
+                reviewCount: reviewCount,
+                hours: formatHours(hours),
+                photos: generatePhotos(category),
+                coordinates: { lat, lng },
+                description: generateDescription(category),
+                website: element.tags.website || element.tags['contact:website'] || null,
+                osmData: element.tags
+            });
+
+            // Limit results
+            if (businesses.length >= CONFIG.MAX_RESULTS) {
+                break;
+            }
+        }
+
+        // If we got very few results, supplement with some realistic mock data
+        if (businesses.length < 5) {
+            const mockBusinesses = generateMockBusinesses(coordinates, 10 - businesses.length);
+            businesses.push(...mockBusinesses);
+        }
+
+        return businesses;
+
+    } catch (error) {
+        console.error('Error fetching from Overpass API:', error);
+        // Fallback to mock data if API fails
+        return generateMockBusinesses(coordinates, 15);
+    }
+}
+
+// Get business type and icon from OSM tags
+function getBusinessTypeAndIcon(tags) {
+    const typeMap = {
+        'restaurant': { category: 'Restaurante', icon: '🍽️' },
+        'cafe': { category: 'Cafetería', icon: '☕' },
+        'bar': { category: 'Bar', icon: '🍺' },
+        'fast_food': { category: 'Comida Rápida', icon: '🍔' },
+        'pharmacy': { category: 'Farmacia', icon: '💊' },
+        'bank': { category: 'Banco', icon: '🏦' },
+        'clinic': { category: 'Clínica', icon: '🏥' },
+        'dentist': { category: 'Dentista', icon: '🦷' },
+        'doctors': { category: 'Médico', icon: '👨‍⚕️' },
+        'hospital': { category: 'Hospital', icon: '🏥' },
+        'veterinary': { category: 'Veterinaria', icon: '🐾' },
+        'fuel': { category: 'Gasolinera', icon: '⛽' },
+        'library': { category: 'Biblioteca', icon: '📚' },
+        'post_office': { category: 'Correos', icon: '📮' },
+        'supermarket': { category: 'Supermercado', icon: '🛒' },
+        'convenience': { category: 'Tienda', icon: '🏪' },
+        'clothes': { category: 'Ropa', icon: '👔' },
+        'hairdresser': { category: 'Peluquería', icon: '💇' },
+        'beauty': { category: 'Belleza', icon: '💅' },
+        'bakery': { category: 'Panadería', icon: '🥖' },
+        'butcher': { category: 'Carnicería', icon: '🥩' },
+        'florist': { category: 'Floristería', icon: '🌸' },
+        'furniture': { category: 'Muebles', icon: '🛋️' },
+        'electronics': { category: 'Electrónica', icon: '📱' },
+        'books': { category: 'Librería', icon: '📚' },
+        'sports': { category: 'Deportes', icon: '⚽' },
+        'jewelry': { category: 'Joyería', icon: '💎' },
+        'car_repair': { category: 'Taller', icon: '🔧' },
+        'office': { category: 'Oficina', icon: '🏢' }
+    };
+
+    // Check amenity first
+    if (tags.amenity && typeMap[tags.amenity]) {
+        return typeMap[tags.amenity];
+    }
+
+    // Check shop
+    if (tags.shop && typeMap[tags.shop]) {
+        return typeMap[tags.shop];
+    }
+
+    // Check craft
+    if (tags.craft && typeMap[tags.craft]) {
+        return typeMap[tags.craft];
+    }
+
+    // Check office
+    if (tags.office) {
+        return typeMap['office'];
+    }
+
+    // Default
+    return { category: 'Negocio', icon: '🏪' };
+}
+
+// Get address from OSM tags
+function getAddress(tags) {
+    const parts = [];
+
+    if (tags['addr:street']) {
+        let street = tags['addr:street'];
+        if (tags['addr:housenumber']) {
+            street += ', ' + tags['addr:housenumber'];
+        }
+        parts.push(street);
+    }
+
+    if (tags['addr:city']) {
+        parts.push(tags['addr:city']);
+    }
+
+    if (parts.length > 0) {
+        return parts.join(', ');
+    }
+
+    return generateAddress();
+}
+
+// Format opening hours
+function formatHours(hours) {
+    if (!hours || hours === '24/7') {
+        return '24 horas';
+    }
+
+    // Simplify complex opening hours
+    if (hours.length > 50) {
+        return 'Ver horario completo';
+    }
+
+    return hours;
+}
+
+// Generate mock businesses as fallback
+function generateMockBusinesses(coordinates, count) {
+    const businessTypes = [
+        { type: 'Restaurante', icon: '🍽️' },
+        { type: 'Cafetería', icon: '☕' },
+        { type: 'Tienda', icon: '🛍️' },
+        { type: 'Peluquería', icon: '💇' },
+        { type: 'Gimnasio', icon: '💪' },
+        { type: 'Farmacia', icon: '💊' },
+        { type: 'Panadería', icon: '🥖' },
+        { type: 'Librería', icon: '📚' },
+        { type: 'Floristería', icon: '🌸' },
+        { type: 'Taller', icon: '🔧' }
+    ];
+
+    const businesses = [];
+
+    for (let i = 0; i < count; i++) {
+        const businessType = businessTypes[Math.floor(Math.random() * businessTypes.length)];
+        const rating = (Math.random() * 2 + 3).toFixed(1);
+        const reviewCount = Math.floor(Math.random() * 500) + 10;
+
+        businesses.push({
+            id: `mock_${i}_${Date.now()}`,
+            name: generateBusinessName(businessType.type),
+            category: businessType.type,
+            icon: businessType.icon,
+            address: generateAddress(),
+            phone: generatePhone(),
+            rating: parseFloat(rating),
+            reviewCount: reviewCount,
+            hours: generateHours(),
+            photos: generatePhotos(businessType.type),
+            coordinates: {
+                lat: coordinates.lat + (Math.random() - 0.5) * 0.02,
+                lng: coordinates.lng + (Math.random() - 0.5) * 0.02
+            },
+            description: generateDescription(businessType.type)
+        });
+    }
+
+    return businesses;
+}
+
+// Generate business name
+function generateBusinessName(type) {
+    const prefixes = ['El', 'La', 'Los', 'Las'];
+    const adjectives = ['Mejor', 'Gran', 'Nuevo', 'Antiguo', 'Moderno', 'Clásico', 'Premium'];
+    const names = ['Sol', 'Luna', 'Estrella', 'Jardín', 'Plaza', 'Rincón', 'Casa', 'Villa'];
+
+    const usePrefix = Math.random() > 0.5;
+    const useAdjective = Math.random() > 0.5;
+
+    let name = '';
+    if (usePrefix) name += prefixes[Math.floor(Math.random() * prefixes.length)] + ' ';
+    if (useAdjective) name += adjectives[Math.floor(Math.random() * adjectives.length)] + ' ';
+    name += names[Math.floor(Math.random() * names.length)];
+
+    return name;
+}
+
+// Generate address
+function generateAddress() {
+    const streets = ['Gran Vía', 'Calle Mayor', 'Paseo de la Castellana', 'Avenida Diagonal', 'Calle Serrano'];
+    const street = streets[Math.floor(Math.random() * streets.length)];
+    const number = Math.floor(Math.random() * 200) + 1;
+
+    return `${street}, ${number}`;
+}
+
+// Generate phone
+function generatePhone() {
+    return `+34 ${Math.floor(Math.random() * 900) + 600} ${Math.floor(Math.random() * 90) + 10} ${Math.floor(Math.random() * 90) + 10} ${Math.floor(Math.random() * 90) + 10}`;
+}
+
+// Generate hours
+function generateHours() {
+    const openHour = Math.floor(Math.random() * 3) + 8; // 8-10 AM
+    const closeHour = Math.floor(Math.random() * 4) + 18; // 6-9 PM
+    return `Lun-Vie: ${openHour}:00 - ${closeHour}:00`;
+}
+
+// Generate photos
+function generatePhotos(type) {
+    // Return placeholder images based on business type
+    return [
+        `https://source.unsplash.com/800x600/?${type.toLowerCase()},business,1`,
+        `https://source.unsplash.com/800x600/?${type.toLowerCase()},interior,2`,
+        `https://source.unsplash.com/800x600/?${type.toLowerCase()},professional,3`
+    ];
+}
+
+// Generate description
+function generateDescription(type) {
+    const descriptions = {
+        'Restaurante': 'Disfruta de una experiencia gastronómica única con platos elaborados con ingredientes frescos y de temporada. Nuestro chef combina tradición e innovación para crear sabores inolvidables.',
+        'Cafetería': 'El lugar perfecto para disfrutar de un café de calidad en un ambiente acogedor. Ofrecemos una selección de cafés especiales, repostería artesanal y opciones saludables.',
+        'Tienda': 'Encuentra los mejores productos seleccionados con cuidado para ti. Ofrecemos calidad, variedad y un servicio personalizado que marca la diferencia.',
+        'Peluquería': 'Transforma tu look con nuestros estilistas profesionales. Utilizamos productos de alta gama y las últimas técnicas para realzar tu belleza natural.',
+        'Gimnasio': 'Alcanza tus objetivos fitness con nuestro equipo de entrenadores certificados. Instalaciones modernas, clases variadas y planes personalizados.',
+        'Farmacia': 'Tu salud es nuestra prioridad. Ofrecemos asesoramiento profesional, productos de calidad y un servicio cercano y confiable.',
+        'Panadería': 'Pan artesanal horneado cada día con ingredientes naturales. La tradición panadera al servicio de tu mesa.',
+        'Librería': 'Un espacio para los amantes de la lectura. Amplio catálogo, recomendaciones personalizadas y eventos literarios.',
+        'Floristería': 'Flores frescas para cada ocasión. Creamos arreglos únicos que transmiten emociones y embellecen cualquier espacio.',
+        'Taller': 'Servicio técnico profesional con años de experiencia. Diagnóstico preciso, reparaciones de calidad y garantía en todos nuestros trabajos.'
+    };
+
+    return descriptions[type] || 'Negocio de calidad con años de experiencia en el sector. Atención personalizada y profesional.';
+}
+
+// Display results
+function displayResults(businesses) {
+    hideLoading();
+    hideError();
+
+    const resultsSection = document.getElementById('resultsSection');
+    resultsSection.classList.remove('hidden');
+
+    if (state.currentView === 'list') {
+        displayListView(businesses);
+    } else {
+        displayMapView(businesses);
+    }
+
+    // Smooth scroll to results
+    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// Display list view
+function displayListView(businesses) {
+    const businessList = document.getElementById('businessList');
+    businessList.innerHTML = '';
+
+    businesses.forEach((business, index) => {
+        const card = createBusinessCard(business, index);
+        businessList.appendChild(card);
+    });
+}
+
+// Create business card
+function createBusinessCard(business, index) {
+    const card = document.createElement('div');
+    card.className = 'business-card';
+    card.style.animationDelay = `${index * 0.1}s`;
+
+    const stars = '⭐'.repeat(Math.floor(business.rating));
+
+    // Crear enlace de teléfono
+    const phoneLink = business.phone !== 'No disponible'
+        ? `<a href="tel:${business.phone.replace(/\s/g, '')}" class="contact-link">${business.phone}</a>`
+        : `<span class="text-muted">${business.phone}</span>`;
+
+    // Crear enlace de dirección (Google Maps)
+    const addressLink = business.googleMapsUrl
+        ? `<a href="${business.googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="contact-link">${business.address}</a>`
+        : `<span>${business.address}</span>`;
+
+    // Crear enlace de sitio web si está disponible
+    const websiteHTML = business.website
+        ? `<div class="info-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+            <a href="${business.website}" target="_blank" rel="noopener noreferrer" class="contact-link">Sitio web</a>
+        </div>`
+        : '';
+
+    card.innerHTML = `
+        <img src="${business.photos[0]}" alt="${business.name}" class="business-image" onerror="this.src='https://via.placeholder.com/800x600/7c3aed/ffffff?text=${business.icon}'">
+        <div class="business-content">
+            <span class="business-category">${business.icon} ${business.category}</span>
+            <h3 class="business-name">${business.name}</h3>
+            <div class="business-rating">
+                <span>${stars}</span>
+                <span>${business.rating}</span>
+                <span style="color: var(--text-muted);">(${business.reviewCount} reseñas)</span>
+            </div>
+            <div class="business-info">
+                <div class="info-item">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                        <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                    ${addressLink}
+                </div>
+                <div class="info-item">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                    </svg>
+                    ${phoneLink}
+                </div>
+                <div class="info-item">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                    <span>${business.hours}</span>
+                </div>
+                ${websiteHTML}
+            </div>
+            <div class="business-actions">
+                <button class="btn btn-primary" onclick="generateWebsite('${business.id}')">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                        <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                        <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                    </svg>
+                    Crear Web
+                </button>
+                <button class="btn btn-secondary" onclick="viewOnMap('${business.id}')">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                        <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                    Ver Mapa
+                </button>
+            </div>
+            ${createContactButtons(business)}
+        </div>
+    `;
+
+    return card;
+}
+
+// Display map view
+function displayMapView(businesses) {
+    const mapContainer = document.getElementById('map');
+
+    // Initialize map if not already done
+    if (!state.map) {
+        const center = businesses[0].coordinates;
+        state.map = new google.maps.Map(mapContainer, {
+            center: center,
+            zoom: 14,
+            styles: getMapStyles()
+        });
+    }
+
+    // Clear existing markers
+    state.markers.forEach(marker => marker.setMap(null));
+    state.markers = [];
+
+    // Add markers for each business
+    businesses.forEach(business => {
+        const marker = new google.maps.Marker({
+            position: business.coordinates,
+            map: state.map,
+            title: business.name,
+            animation: google.maps.Animation.DROP
+        });
+
+        const infoWindow = new google.maps.InfoWindow({
+            content: createInfoWindowContent(business)
+        });
+
+        marker.addListener('click', () => {
+            infoWindow.open(state.map, marker);
+        });
+
+        state.markers.push(marker);
+    });
+}
+
+// Create info window content
+function createInfoWindowContent(business) {
+    return `
+        <div style="padding: 10px; max-width: 250px;">
+            <h3 style="margin: 0 0 8px 0; color: #333;">${business.name}</h3>
+            <p style="margin: 0 0 8px 0; color: #666; font-size: 14px;">${business.category}</p>
+            <p style="margin: 0 0 8px 0; color: #666; font-size: 13px;">${business.address}</p>
+            <p style="margin: 0 0 12px 0; color: #f59e0b; font-size: 14px;">⭐ ${business.rating} (${business.reviewCount})</p>
+            <button onclick="generateWebsite('${business.id}')" style="background: linear-gradient(135deg, #7c3aed, #ec4899); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                Crear Web
+            </button>
+        </div>
+    `;
+}
+
+// Get custom map styles
+function getMapStyles() {
+    return [
+        {
+            "featureType": "all",
+            "elementType": "geometry",
+            "stylers": [{ "color": "#242f3e" }]
+        },
+        {
+            "featureType": "all",
+            "elementType": "labels.text.stroke",
+            "stylers": [{ "lightness": -80 }]
+        },
+        {
+            "featureType": "administrative",
+            "elementType": "labels.text.fill",
+            "stylers": [{ "color": "#746855" }]
+        },
+        {
+            "featureType": "poi",
+            "elementType": "labels.text.fill",
+            "stylers": [{ "color": "#d59563" }]
+        },
+        {
+            "featureType": "water",
+            "elementType": "geometry",
+            "stylers": [{ "color": "#17263c" }]
+        }
+    ];
+}
+
+// Switch view
+function switchView(view) {
+    state.currentView = view;
+
+    const listView = document.getElementById('listView');
+    const mapView = document.getElementById('mapView');
+    const listViewBtn = document.getElementById('listViewBtn');
+    const mapViewBtn = document.getElementById('mapViewBtn');
+
+    if (view === 'list') {
+        listView.classList.remove('hidden');
+        mapView.classList.add('hidden');
+        listViewBtn.classList.add('active');
+        mapViewBtn.classList.remove('active');
+    } else {
+        listView.classList.add('hidden');
+        mapView.classList.remove('hidden');
+        listViewBtn.classList.remove('active');
+        mapViewBtn.classList.add('active');
+
+        if (state.businesses.length > 0) {
+            displayMapView(state.businesses);
+        }
+    }
+}
+
+// View business on map
+function viewOnMap(businessId) {
+    const business = state.businesses.find(b => b.id === businessId);
+    if (!business) return;
+
+    switchView('map');
+
+    // Center map on business
+    if (state.map) {
+        state.map.setCenter(business.coordinates);
+        state.map.setZoom(16);
+
+        // Find and click the marker
+        const marker = state.markers.find(m => m.getTitle() === business.name);
+        if (marker) {
+            google.maps.event.trigger(marker, 'click');
+        }
+    }
+}
+
+// Generate website for business
+function generateWebsite(businessId) {
+    const business = state.businesses.find(b => b.id === businessId);
+    if (!business) return;
+
+    state.selectedBusiness = business;
+
+    // Generate the website HTML
+    const websiteHTML = generateBusinessWebsite(business);
+
+    // Show in modal
+    showWebsiteModal(websiteHTML);
+}
+
+// Generate business website HTML
+function generateBusinessWebsite(business) {
+    const stars = '⭐'.repeat(Math.floor(business.rating));
+
+    return `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${business.name} - ${business.category}</title>
+    <meta name="description" content="${business.description}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            line-height: 1.6;
+            color: #333;
+        }
+        
+        .hero {
+            position: relative;
+            height: 600px;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.9), rgba(236, 72, 153, 0.9)), url('${business.photos[0]}');
+            background-size: cover;
+            background-position: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            color: white;
+        }
+        
+        .hero-content {
+            max-width: 800px;
+            padding: 2rem;
+        }
+        
+        .hero h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 4rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+            text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        .hero .category {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            padding: 0.5rem 1.5rem;
+            border-radius: 50px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+        
+        .hero .rating {
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: white;
+            color: #7c3aed;
+            padding: 1rem 2.5rem;
+            border-radius: 50px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+        }
+        
+        .cta-button:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+        
+        .section {
+            padding: 5rem 0;
+        }
+        
+        .section-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.5rem;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 3rem;
+            color: #1a1a1a;
+        }
+        
+        .about {
+            background: #f9fafb;
+        }
+        
+        .about-content {
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
+            font-size: 1.2rem;
+            line-height: 1.8;
+            color: #4b5563;
+        }
+        
+        .services {
+            background: white;
+        }
+        
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+        
+        .service-card {
+            background: linear-gradient(135deg, #7c3aed, #ec4899);
+            color: white;
+            padding: 2.5rem;
+            border-radius: 16px;
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+        
+        .service-card:hover {
+            transform: translateY(-8px);
+        }
+        
+        .service-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .gallery {
+            background: #f9fafb;
+        }
+        
+        .gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 1.5rem;
+        }
+        
+        .gallery-item {
+            height: 300px;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+        }
+        
+        .gallery-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.3s ease;
+        }
+        
+        .gallery-item:hover img {
+            transform: scale(1.1);
+        }
+        
+        .contact {
+            background: white;
+        }
+        
+        .contact-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 3rem;
+            align-items: start;
+        }
+        
+        .contact-info {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        
+        .contact-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            padding: 1.5rem;
+            background: #f9fafb;
+            border-radius: 12px;
+        }
+        
+        .contact-item svg {
+            flex-shrink: 0;
+            color: #7c3aed;
+        }
+        
+        .map-container {
+            height: 400px;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+        }
+        
+        .footer {
+            background: #1a1a1a;
+            color: white;
+            text-align: center;
+            padding: 2rem;
+        }
+        
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+            
+            .contact-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .gallery-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content">
+            <div class="category">${business.icon} ${business.category}</div>
+            <h1>${business.name}</h1>
+            <div class="rating">${stars} ${business.rating} (${business.reviewCount} reseñas)</div>
+            <a href="tel:${business.phone.replace(/\s/g, '')}" class="cta-button">Llamar Ahora</a>
+        </div>
+    </section>
+    
+    <!-- About Section -->
+    <section class="section about">
+        <div class="container">
+            <h2 class="section-title">Sobre Nosotros</h2>
+            <div class="about-content">
+                <p>${business.description}</p>
+            </div>
+        </div>
+    </section>
+    
+    <!-- Services Section -->
+    <section class="section services">
+        <div class="container">
+            <h2 class="section-title">Nuestros Servicios</h2>
+            <div class="services-grid">
+                ${generateServices(business.category)}
+            </div>
+        </div>
+    </section>
+    
+    <!-- Gallery Section -->
+    <section class="section gallery">
+        <div class="container">
+            <h2 class="section-title">Galería</h2>
+            <div class="gallery-grid">
+                ${business.photos.map(photo => `
+                    <div class="gallery-item">
+                        <img src="${photo}" alt="${business.name}" onerror="this.src='https://via.placeholder.com/800x600/7c3aed/ffffff?text=${business.icon}'">
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    </section>
+    
+    <!-- Contact Section -->
+    <section class="section contact">
+        <div class="container">
+            <h2 class="section-title">Contacto</h2>
+            <div class="contact-grid">
+                <div class="contact-info">
+                    <div class="contact-item">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                            <circle cx="12" cy="10" r="3"></circle>
+                        </svg>
+                        <div>
+                            <h3>Dirección</h3>
+                            <p>${business.address}</p>
+                        </div>
+                    </div>
+                    <div class="contact-item">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                        </svg>
+                        <div>
+                            <h3>Teléfono</h3>
+                            <p>${business.phone}</p>
+                        </div>
+                    </div>
+                    <div class="contact-item">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        <div>
+                            <h3>Horario</h3>
+                            <p>${business.hours}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="map-container">
+                    <iframe 
+                        width="100%" 
+                        height="100%" 
+                        frameborder="0" 
+                        style="border:0" 
+                        src="https://www.openstreetmap.org/export/embed.html?bbox=${business.coordinates.lng - 0.01}%2C${business.coordinates.lat - 0.01}%2C${business.coordinates.lng + 0.01}%2C${business.coordinates.lat + 0.01}&layer=mapnik&marker=${business.coordinates.lat}%2C${business.coordinates.lng}" 
+                        allowfullscreen>
+                    </iframe>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <!-- Footer -->
+    <footer class="footer">
+        <p>&copy; 2026 ${business.name}. Todos los derechos reservados.</p>
+        <p style="margin-top: 0.5rem; opacity: 0.7;">Web generada automáticamente por BuscaNegocios</p>
+    </footer>
+</body>
+</html>
+    `;
+}
+
+// Generate services based on business type
+function generateServices(category) {
+    const services = {
+        'Restaurante': [
+            { title: 'Menú del Día', desc: 'Platos variados y equilibrados cada día' },
+            { title: 'Carta Especial', desc: 'Selección de platos gourmet' },
+            { title: 'Eventos Privados', desc: 'Celebraciones y reuniones' }
+        ],
+        'Cafetería': [
+            { title: 'Cafés Especiales', desc: 'Variedades de todo el mundo' },
+            { title: 'Repostería Artesanal', desc: 'Dulces hechos en casa' },
+            { title: 'Desayunos', desc: 'Opciones saludables y deliciosas' }
+        ],
+        'Tienda': [
+            { title: 'Productos Premium', desc: 'Selección de alta calidad' },
+            { title: 'Asesoramiento', desc: 'Expertos a tu disposición' },
+            { title: 'Envío a Domicilio', desc: 'Comodidad garantizada' }
+        ],
+        'Peluquería': [
+            { title: 'Corte y Peinado', desc: 'Estilos personalizados' },
+            { title: 'Coloración', desc: 'Técnicas avanzadas' },
+            { title: 'Tratamientos', desc: 'Cuidado capilar profesional' }
+        ],
+        'Gimnasio': [
+            { title: 'Entrenamiento Personal', desc: 'Planes individualizados' },
+            { title: 'Clases Grupales', desc: 'Variedad de disciplinas' },
+            { title: 'Zona Cardio', desc: 'Equipamiento de última generación' }
+        ]
+    };
+
+    const defaultServices = [
+        { title: 'Servicio Premium', desc: 'Calidad garantizada en cada detalle' },
+        { title: 'Atención Personalizada', desc: 'Nos adaptamos a tus necesidades' },
+        { title: 'Profesionales Expertos', desc: 'Años de experiencia en el sector' }
+    ];
+
+    const businessServices = services[category] || defaultServices;
+
+    return businessServices.map(service => `
+        <div class="service-card">
+            <h3>${service.title}</h3>
+            <p>${service.desc}</p>
+        </div>
+    `).join('');
+}
+
+// Show website modal
+function showWebsiteModal(html) {
+    const modal = document.getElementById('websiteModal');
+    const preview = document.getElementById('websitePreview');
+
+    // Create a blob URL for the HTML
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+
+    preview.src = url;
+    modal.classList.remove('hidden');
+
+    // Prevent body scroll
+    document.body.style.overflow = 'hidden';
+}
+
+// Close website modal
+function closeWebsiteModal() {
+    const modal = document.getElementById('websiteModal');
+    const preview = document.getElementById('websitePreview');
+
+    modal.classList.add('hidden');
+    preview.src = '';
+
+    // Restore body scroll
+    document.body.style.overflow = '';
+}
+
+// Open website in new tab
+function openWebsiteInNewTab() {
+    if (!state.selectedBusiness) return;
+
+    const html = generateBusinessWebsite(state.selectedBusiness);
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+
+    window.open(url, '_blank');
+}
+
+// Show loading state
+function showLoading() {
+    document.getElementById('loadingState').classList.remove('hidden');
+    document.getElementById('errorState').classList.add('hidden');
+    document.getElementById('resultsSection').classList.add('hidden');
+}
+
+// Hide loading state
+function hideLoading() {
+    document.getElementById('loadingState').classList.add('hidden');
+}
+
+// Show error state
+function showError(message) {
+    hideLoading();
+    document.getElementById('errorMessage').textContent = message;
+    document.getElementById('errorState').classList.remove('hidden');
+    document.getElementById('resultsSection').classList.add('hidden');
+}
+
+// Hide error state
+function hideError() {
+    document.getElementById('errorState').classList.add('hidden');
+}

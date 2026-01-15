@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BuscaNegocios - Encuentra y Crea Webs Profesionales</title>
+    <meta name="description"
+        content="Busca negocios locales por código postal y genera webs profesionales automáticamente">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <!-- Hero Section -->
+    <header class="hero">
+        <div class="hero-background"></div>
+        <div class="container">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    <span class="gradient-text">BuscaNegocios</span>
+                </h1>
+                <p class="hero-subtitle">Descubre negocios locales y genera webs profesionales al instante</p>
+
+                <!-- Search Box -->
+                <div class="search-container">
+                    <div class="search-box">
+                        <svg class="search-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2">
+                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                            <circle cx="12" cy="10" r="3"></circle>
+                        </svg>
+                        <input type="text" id="postalCodeInput"
+                            placeholder="Introduce un código postal (ej: 28001, 08001, 41001)" class="search-input" />
+                        <button id="searchBtn" class="search-btn">
+                            <span>Buscar</span>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M5 12h14M12 5l7 7-7 7" />
+                            </svg>
+                        </button>
+                    </div>
+                    <p class="search-hint">Busca negocios cercanos a cualquier código postal de España</p>
+
+                    <!-- Botón de configuración de mensajes -->
+                    <button id="configMessagesBtn" class="config-messages-btn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path
+                                d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24">
+                            </path>
+                        </svg>
+                        <span>Configurar Mensajes</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Loading State -->
+    <div id="loadingState" class="loading-state hidden">
+        <div class="loading-spinner"></div>
+        <p>Buscando negocios cercanos...</p>
+    </div>
+
+    <!-- Error State -->
+    <div id="errorState" class="error-state hidden">
+        <div class="error-icon">⚠️</div>
+        <h3>Oops! Algo salió mal</h3>
+        <p id="errorMessage"></p>
+        <button id="retryBtn" class="retry-btn">Intentar de nuevo</button>
+    </div>
+
+    <!-- Results Section -->
+    <section id="resultsSection" class="results-section hidden">
+        <div class="container">
+            <div class="results-header">
+                <h2>Negocios encontrados</h2>
+                <div class="view-toggle">
+                    <button id="listViewBtn" class="view-btn active">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <line x1="8" y1="6" x2="21" y2="6"></line>
+                            <line x1="8" y1="12" x2="21" y2="12"></line>
+                            <line x1="8" y1="18" x2="21" y2="18"></line>
+                            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                        </svg>
+                        Lista
+                    </button>
+                    <button id="mapViewBtn" class="view-btn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                            <circle cx="12" cy="10" r="3"></circle>
+                        </svg>
+                        Mapa
+                    </button>
+                </div>
+            </div>
+
+            <div class="results-content">
+                <!-- List View -->
+                <div id="listView" class="list-view">
+                    <div id="businessList" class="business-grid"></div>
+                </div>
+
+                <!-- Map View -->
+                <div id="mapView" class="map-view hidden">
+                    <div id="map" class="map-container"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Message Configuration Modal -->
+    <div id="messageConfigModal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content message-config-modal">
+            <button id="closeMessageConfig" class="modal-close">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+            <div class="modal-header">
+                <h2>⚙️ Configurar Mensajes de Contacto</h2>
+                <p class="modal-subtitle">Personaliza las plantillas de email y WhatsApp para contactar negocios</p>
+            </div>
+            <div class="modal-body config-modal-body">
+                <!-- Email Template -->
+                <div class="template-section">
+                    <div class="template-header">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z">
+                            </path>
+                            <polyline points="22,6 12,13 2,6"></polyline>
+                        </svg>
+                        <h3>Plantilla de Email</h3>
+                    </div>
+                    <div class="form-group">
+                        <label for="emailSubject">Asunto del Email</label>
+                        <input type="text" id="emailSubject" class="form-input"
+                            placeholder="Ej: Consulta sobre sus servicios">
+                    </div>
+                    <div class="form-group">
+                        <label for="emailBody">Cuerpo del Email</label>
+                        <textarea id="emailBody" class="form-textarea" rows="6"
+                            placeholder="Escribe tu mensaje aquí..."></textarea>
+                    </div>
+                </div>
+
+                <!-- WhatsApp Template -->
+                <div class="template-section">
+                    <div class="template-header">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path
+                                d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z">
+                            </path>
+                        </svg>
+                        <h3>Plantilla de WhatsApp</h3>
+                    </div>
+                    <div class="form-group">
+                        <label for="whatsappMessage">Mensaje de WhatsApp</label>
+                        <textarea id="whatsappMessage" class="form-textarea" rows="6"
+                            placeholder="Escribe tu mensaje aquí..."></textarea>
+                    </div>
+                </div>
+
+                <!-- Variables Info -->
+                <div class="variables-info">
+                    <h4>📝 Variables disponibles:</h4>
+                    <div class="variables-grid">
+                        <div class="variable-item">
+                            <code>{nombre}</code>
+                            <span>Nombre del negocio</span>
+                        </div>
+                        <div class="variable-item">
+                            <code>{direccion}</code>
+                            <span>Dirección completa</span>
+                        </div>
+                        <div class="variable-item">
+                            <code>{telefono}</code>
+                            <span>Teléfono de contacto</span>
+                        </div>
+                        <div class="variable-item">
+                            <code>{categoria}</code>
+                            <span>Categoría del negocio</span>
+                        </div>
+                    </div>
+                    <p class="variables-hint">💡 Usa estas variables en tus mensajes y se reemplazarán automáticamente
+                        con los datos del negocio</p>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="config-actions">
+                    <button id="resetTemplates" class="btn-secondary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="1 4 1 10 7 10"></polyline>
+                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                        </svg>
+                        Restablecer
+                    </button>
+                    <button id="saveTemplates" class="btn-primary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                            <polyline points="7 3 7 8 15 8"></polyline>
+                        </svg>
+                        Guardar Plantillas
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Generated Website Modal -->
+    <div id="websiteModal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <button id="closeModal" class="modal-close">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+            <div class="modal-header">
+                <h2>Vista previa de la web generada</h2>
+                <button id="openInNewTab" class="open-tab-btn">
+                    Abrir en nueva pestaña
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                        <polyline points="15 3 21 3 21 9"></polyline>
+                        <line x1="10" y1="14" x2="21" y2="3"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <iframe id="websitePreview" class="website-preview"></iframe>
+            </div>
+        </div>
+    </div>
+
+    <script src="messages.js"></script>
+    <script src="app.js"></script>
+    <script
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDjuYD0wQFC44u0PzR5dFdTUKTmg572rE4&libraries=places&callback=initMap"
+        async defer></script>
+</body>
+
+</html>
