@@ -1054,9 +1054,58 @@ function generateWebsite(businessId) {
     showWebsiteModal(websiteHTML);
 }
 
-// Generate business website HTML
+// Generate business website HTML with multiple modern templates
 function generateBusinessWebsite(business) {
+    // Select template based on business category and add randomness
+    const templateId = selectTemplateForBusiness(business);
+
+    // Generate website using selected template
+    switch (templateId) {
+        case 1:
+            return generateTemplate1_Modern(business);
+        case 2:
+            return generateTemplate2_Minimalist(business);
+        case 3:
+            return generateTemplate3_Bold(business);
+        case 4:
+            return generateTemplate4_Elegant(business);
+        case 5:
+            return generateTemplate5_Creative(business);
+        default:
+            return generateTemplate1_Modern(business);
+    }
+}
+
+// Select template based on business category with randomness
+function selectTemplateForBusiness(business) {
+    // Map categories to preferred templates (but add randomness)
+    const categoryTemplates = {
+        'Restaurante': [1, 3, 5],
+        'Cafetería': [2, 4, 5],
+        'Tienda': [1, 2, 3],
+        'Peluquería': [2, 4, 5],
+        'Gimnasio': [1, 3, 5],
+        'Farmacia': [2, 4],
+        'Panadería': [2, 4, 5],
+        'Librería': [2, 4],
+        'Floristería': [4, 5],
+        'Taller': [1, 3]
+    };
+
+    const preferredTemplates = categoryTemplates[business.category] || [1, 2, 3, 4, 5];
+
+    // Add some randomness - 70% chance to use preferred, 30% chance to use any
+    if (Math.random() < 0.7) {
+        return preferredTemplates[Math.floor(Math.random() * preferredTemplates.length)];
+    } else {
+        return Math.floor(Math.random() * 5) + 1;
+    }
+}
+
+// Template 1: Modern Gradient Design
+function generateTemplate1_Modern(business) {
     const stars = '⭐'.repeat(Math.floor(business.rating));
+    const colorScheme = getColorScheme(1);
 
     return `
 <!DOCTYPE html>
@@ -1066,240 +1115,301 @@ function generateBusinessWebsite(business) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${business.name} - ${business.category}</title>
     <meta name="description" content="${business.description}">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Poppins', sans-serif;
             line-height: 1.6;
-            color: #333;
+            color: #1a1a1a;
+            overflow-x: hidden;
         }
         
         .hero {
             position: relative;
-            height: 600px;
-            background: linear-gradient(135deg, rgba(124, 58, 237, 0.9), rgba(236, 72, 153, 0.9)), url('${business.photos[0]}');
-            background-size: cover;
-            background-position: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, ${colorScheme.primary}, ${colorScheme.secondary});
             display: flex;
             align-items: center;
             justify-content: center;
             text-align: center;
             color: white;
+            overflow: hidden;
+        }
+        
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('${business.photos[0]}') center/cover;
+            opacity: 0.15;
+            animation: kenburns 20s infinite alternate;
+        }
+        
+        @keyframes kenburns {
+            0% { transform: scale(1); }
+            100% { transform: scale(1.1); }
         }
         
         .hero-content {
-            max-width: 800px;
-            padding: 2rem;
+            position: relative;
+            z-index: 2;
+            max-width: 900px;
+            padding: 3rem;
+            animation: fadeInUp 1s ease;
+        }
+        
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .category-badge {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(20px);
+            padding: 0.75rem 2rem;
+            border-radius: 50px;
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 2rem;
+            border: 2px solid rgba(255, 255, 255, 0.3);
         }
         
         .hero h1 {
-            font-family: 'Outfit', sans-serif;
-            font-size: 4rem;
-            font-weight: 800;
-            margin-bottom: 1rem;
-            text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-        }
-        
-        .hero .category {
-            display: inline-block;
-            background: rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(10px);
-            padding: 0.5rem 1.5rem;
-            border-radius: 50px;
-            font-size: 1.2rem;
-            font-weight: 600;
-            margin-bottom: 1rem;
-        }
-        
-        .hero .rating {
-            font-size: 1.5rem;
+            font-family: 'Playfair Display', serif;
+            font-size: 5rem;
+            font-weight: 900;
             margin-bottom: 1.5rem;
+            text-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            letter-spacing: -2px;
+        }
+        
+        .rating {
+            font-size: 1.8rem;
+            margin-bottom: 2rem;
+            opacity: 0.95;
+        }
+        
+        .cta-group {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
         }
         
         .cta-button {
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
             background: white;
-            color: #7c3aed;
-            padding: 1rem 2.5rem;
+            color: ${colorScheme.primary};
+            padding: 1.2rem 3rem;
             border-radius: 50px;
             font-size: 1.1rem;
             font-weight: 700;
             text-decoration: none;
-            transition: all 0.3s ease;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
         }
         
         .cta-button:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+            transform: translateY(-5px) scale(1.05);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        
+        .cta-secondary {
+            background: transparent;
+            color: white;
+            border: 2px solid white;
+        }
+        
+        .section {
+            padding: 6rem 2rem;
         }
         
         .container {
             max-width: 1200px;
             margin: 0 auto;
-            padding: 0 2rem;
-        }
-        
-        .section {
-            padding: 5rem 0;
         }
         
         .section-title {
-            font-family: 'Outfit', sans-serif;
-            font-size: 2.5rem;
-            font-weight: 700;
+            font-family: 'Playfair Display', serif;
+            font-size: 3.5rem;
+            font-weight: 900;
             text-align: center;
-            margin-bottom: 3rem;
-            color: #1a1a1a;
+            margin-bottom: 4rem;
+            background: linear-gradient(135deg, ${colorScheme.primary}, ${colorScheme.secondary});
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
         
         .about {
-            background: #f9fafb;
+            background: #ffffff;
         }
         
         .about-content {
             max-width: 800px;
             margin: 0 auto;
             text-align: center;
-            font-size: 1.2rem;
-            line-height: 1.8;
-            color: #4b5563;
+            font-size: 1.3rem;
+            line-height: 2;
+            color: #4a5568;
         }
         
         .services {
-            background: white;
+            background: linear-gradient(180deg, #f7fafc 0%, #ffffff 100%);
         }
         
         .services-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 2.5rem;
         }
         
         .service-card {
-            background: linear-gradient(135deg, #7c3aed, #ec4899);
-            color: white;
-            padding: 2.5rem;
-            border-radius: 16px;
+            background: white;
+            padding: 3rem;
+            border-radius: 24px;
             text-align: center;
-            transition: transform 0.3s ease;
+            transition: all 0.4s ease;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(0, 0, 0, 0.05);
         }
         
         .service-card:hover {
-            transform: translateY(-8px);
+            transform: translateY(-15px);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            background: linear-gradient(135deg, ${colorScheme.primary}, ${colorScheme.secondary});
+            color: white;
         }
         
         .service-card h3 {
-            font-size: 1.5rem;
+            font-size: 1.8rem;
             margin-bottom: 1rem;
+            font-weight: 700;
         }
         
         .gallery {
-            background: #f9fafb;
+            background: #ffffff;
         }
         
         .gallery-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 1.5rem;
+            grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+            gap: 2rem;
         }
         
         .gallery-item {
-            height: 300px;
-            border-radius: 16px;
+            height: 350px;
+            border-radius: 24px;
             overflow: hidden;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.12);
+            position: relative;
+        }
+        
+        .gallery-item::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, ${colorScheme.primary}80, ${colorScheme.secondary}80);
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+        
+        .gallery-item:hover::after {
+            opacity: 1;
         }
         
         .gallery-item img {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            transition: transform 0.3s ease;
+            transition: transform 0.6s ease;
         }
         
         .gallery-item:hover img {
-            transform: scale(1.1);
+            transform: scale(1.15);
         }
         
         .contact {
-            background: white;
+            background: linear-gradient(135deg, ${colorScheme.primary}, ${colorScheme.secondary});
+            color: white;
+        }
+        
+        .contact .section-title {
+            color: white;
+            -webkit-text-fill-color: white;
         }
         
         .contact-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 3rem;
+            gap: 4rem;
             align-items: start;
         }
         
         .contact-info {
             display: flex;
             flex-direction: column;
-            gap: 1.5rem;
+            gap: 2rem;
         }
         
         .contact-item {
             display: flex;
             align-items: flex-start;
-            gap: 1rem;
-            padding: 1.5rem;
-            background: #f9fafb;
-            border-radius: 12px;
+            gap: 1.5rem;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
         
         .contact-item svg {
             flex-shrink: 0;
-            color: #7c3aed;
         }
         
         .map-container {
-            height: 400px;
-            border-radius: 16px;
+            height: 500px;
+            border-radius: 24px;
             overflow: hidden;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
         }
         
         .footer {
-            background: #1a1a1a;
+            background: #0a0a0a;
             color: white;
             text-align: center;
-            padding: 2rem;
+            padding: 3rem;
         }
         
         @media (max-width: 768px) {
-            .hero h1 {
-                font-size: 2.5rem;
-            }
-            
-            .contact-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .gallery-grid {
-                grid-template-columns: 1fr;
-            }
+            .hero h1 { font-size: 3rem; }
+            .contact-grid { grid-template-columns: 1fr; }
+            .gallery-grid { grid-template-columns: 1fr; }
+            .cta-group { flex-direction: column; }
         }
     </style>
 </head>
 <body>
-    <!-- Hero Section -->
     <section class="hero">
         <div class="hero-content">
-            <div class="category">${business.icon} ${business.category}</div>
+            <div class="category-badge">${business.icon} ${business.category}</div>
             <h1>${business.name}</h1>
             <div class="rating">${stars} ${business.rating} (${business.reviewCount} reseñas)</div>
-            <a href="tel:${business.phone.replace(/\s/g, '')}" class="cta-button">Llamar Ahora</a>
+            <div class="cta-group">
+                <a href="tel:${business.phone.replace(/\s/g, '')}" class="cta-button">📞 Llamar Ahora</a>
+                <a href="#contact" class="cta-button cta-secondary">📍 Cómo Llegar</a>
+            </div>
         </div>
     </section>
     
-    <!-- About Section -->
     <section class="section about">
         <div class="container">
             <h2 class="section-title">Sobre Nosotros</h2>
@@ -1309,7 +1419,6 @@ function generateBusinessWebsite(business) {
         </div>
     </section>
     
-    <!-- Services Section -->
     <section class="section services">
         <div class="container">
             <h2 class="section-title">Nuestros Servicios</h2>
@@ -1319,62 +1428,56 @@ function generateBusinessWebsite(business) {
         </div>
     </section>
     
-    <!-- Gallery Section -->
     <section class="section gallery">
         <div class="container">
             <h2 class="section-title">Galería</h2>
             <div class="gallery-grid">
                 ${business.photos.map(photo => `
                     <div class="gallery-item">
-                        <img src="${photo}" alt="${business.name}" onerror="this.src='https://via.placeholder.com/800x600/7c3aed/ffffff?text=${business.icon}'">
+                        <img src="${photo}" alt="${business.name}" onerror="this.src='https://via.placeholder.com/800x600/${colorScheme.primary.replace('#', '')}/ffffff?text=${business.icon}'">
                     </div>
                 `).join('')}
             </div>
         </div>
     </section>
     
-    <!-- Contact Section -->
-    <section class="section contact">
+    <section id="contact" class="section contact">
         <div class="container">
             <h2 class="section-title">Contacto</h2>
             <div class="contact-grid">
                 <div class="contact-info">
                     <div class="contact-item">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
                             <circle cx="12" cy="10" r="3"></circle>
                         </svg>
                         <div>
-                            <h3>Dirección</h3>
-                            <p>${business.address}</p>
+                            <h3 style="font-size: 1.3rem; margin-bottom: 0.5rem;">Dirección</h3>
+                            <p style="opacity: 0.9;">${business.address}</p>
                         </div>
                     </div>
                     <div class="contact-item">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
                         </svg>
                         <div>
-                            <h3>Teléfono</h3>
-                            <p>${business.phone}</p>
+                            <h3 style="font-size: 1.3rem; margin-bottom: 0.5rem;">Teléfono</h3>
+                            <p style="opacity: 0.9;">${business.phone}</p>
                         </div>
                     </div>
                     <div class="contact-item">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="10"></circle>
                             <polyline points="12 6 12 12 16 14"></polyline>
                         </svg>
                         <div>
-                            <h3>Horario</h3>
-                            <p>${business.hours}</p>
+                            <h3 style="font-size: 1.3rem; margin-bottom: 0.5rem;">Horario</h3>
+                            <p style="opacity: 0.9;">${business.hours}</p>
                         </div>
                     </div>
                 </div>
                 <div class="map-container">
-                    <iframe 
-                        width="100%" 
-                        height="100%" 
-                        frameborder="0" 
-                        style="border:0" 
+                    <iframe width="100%" height="100%" frameborder="0" style="border:0" 
                         src="https://www.openstreetmap.org/export/embed.html?bbox=${business.coordinates.lng - 0.01}%2C${business.coordinates.lat - 0.01}%2C${business.coordinates.lng + 0.01}%2C${business.coordinates.lat + 0.01}&layer=mapnik&marker=${business.coordinates.lat}%2C${business.coordinates.lng}" 
                         allowfullscreen>
                     </iframe>
@@ -1383,10 +1486,9 @@ function generateBusinessWebsite(business) {
         </div>
     </section>
     
-    <!-- Footer -->
     <footer class="footer">
-        <p>&copy; 2026 ${business.name}. Todos los derechos reservados.</p>
-        <p style="margin-top: 0.5rem; opacity: 0.7;">Web generada automáticamente por BuscaNegocios</p>
+        <p style="font-size: 1.1rem; font-weight: 600;">&copy; 2026 ${business.name}. Todos los derechos reservados.</p>
+        <p style="margin-top: 0.5rem; opacity: 0.6;">Web generada automáticamente por BuscaNegocios</p>
     </footer>
 </body>
 </html>
