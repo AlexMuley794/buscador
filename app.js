@@ -5,8 +5,8 @@ const CONFIG = {
     // Necesitas habilitar: Places API, Maps JavaScript API, Geocoding API
     GOOGLE_MAPS_API_KEY: (typeof ENV !== 'undefined' && ENV.GOOGLE_MAPS_API_KEY) ? ENV.GOOGLE_MAPS_API_KEY : 'YOUR_API_KEY',
     DEFAULT_COUNTRY: 'ES',
-    SEARCH_RADIUS: 5000, // 5km radius (máximo 50000)
-    MAX_RESULTS: 20,
+    SEARCH_RADIUS: 3000, // 3km para asegurar cobertura completa del CP
+    MAX_RESULTS: 800, // Alto límite para no perder candidatos antes de filtrar
     USE_GOOGLE_PLACES: true // true = Google Places (RECOMENDADO), false = OpenStreetMap
 };
 
@@ -229,13 +229,18 @@ function extractPostalCode(address) {
     return postalCodeMatch ? postalCodeMatch[1] : null;
 }
 
-// Verificar si un código postal coincide exactamente con el código postal buscado
+// Verificar si un código postal coincide exactamente
 function isPostalCodeNearby(searchedPostalCode, businessPostalCode) {
-    if (!searchedPostalCode || !businessPostalCode) return false; // Si no hay código, rechazar
+    if (!searchedPostalCode || !businessPostalCode) return false;
 
-    // Comparación exacta de códigos postales
-    // Solo se mostrarán negocios con el código postal exacto introducido
-    return searchedPostalCode === businessPostalCode;
+    // Convertir a números para comparación estricta (ej: 04001 == 4001)
+    const searchedNum = parseInt(searchedPostalCode, 10);
+    const businessNum = parseInt(businessPostalCode, 10);
+
+    if (isNaN(searchedNum) || isNaN(businessNum)) return false;
+
+    // Búsqueda EXACTA (sin tolerancia ni rangos)
+    return searchedNum === businessNum;
 }
 
 // Search for nearby businesses using Overpass API (OpenStreetMap)
@@ -264,170 +269,393 @@ async function searchWithGooglePlaces(coordinates) {
         // Crear servicio de Places
         const service = new google.maps.places.PlacesService(state.map);
 
-        // Buscar negocios cercanos
-        const request = {
-            location: new google.maps.LatLng(coordinates.lat, coordinates.lng),
-            radius: CONFIG.SEARCH_RADIUS,
-            // Tipos de negocios a buscar
-            types: ['restaurant', 'cafe', 'store', 'pharmacy', 'bank', 'hospital',
-                'gym', 'bakery', 'book_store', 'clothing_store', 'electronics_store',
-                'florist', 'furniture_store', 'hardware_store', 'jewelry_store',
-                'shoe_store', 'shopping_mall', 'supermarket', 'beauty_salon',
-                'hair_care', 'spa', 'dentist', 'doctor', 'veterinary_care']
-        };
+        const allResults = [];
+        let searchesCompleted = 0;
 
-        service.nearbySearch(request, async (results, status) => {
-            if (status === google.maps.places.PlacesServiceStatus.OK) {
-                // Obtener detalles completos de cada negocio (incluyendo teléfono)
-                const businessPromises = results.slice(0, CONFIG.MAX_RESULTS).map((place) => {
-                    return new Promise((resolveDetails) => {
-                        // Solicitar detalles completos del negocio
-                        service.getDetails({
-                            placeId: place.place_id,
-                            fields: ['name', 'formatted_phone_number', 'international_phone_number',
-                                'website', 'opening_hours', 'formatted_address', 'url']
-                        }, (details, detailsStatus) => {
-                            // Obtener categoría e icono
-                            const { category, icon } = getBusinessCategoryFromGoogleTypes(place.types);
+        // Lista exhaustiva de tipos de negocios para buscar
+        const businessTypes = [
+            null, // Búsqueda general sin tipo
+            'establishment',
+            'point_of_interest',
+            'store',
+            'restaurant',
+            'cafe',
+            'bar',
+            'food',
+            'bakery',
+            'meal_takeaway',
+            'meal_delivery',
+            'pharmacy',
+            'doctor',
+            'dentist',
+            'hospital',
+            'physiotherapist',
+            'veterinary_care',
+            'beauty_salon',
+            'hair_care',
+            'spa',
+            'gym',
+            'clothing_store',
+            'shoe_store',
+            'jewelry_store',
+            'electronics_store',
+            'furniture_store',
+            'home_goods_store',
+            'hardware_store',
+            'book_store',
+            'florist',
+            'pet_store',
+            'supermarket',
+            'convenience_store',
+            'liquor_store',
+            'bicycle_store',
+            'car_dealer',
+            'car_repair',
+            'car_wash',
+            'gas_station',
+            'parking',
+            'laundry',
+            'locksmith',
+            'moving_company',
+            'painter',
+            'plumber',
+            'roofing_contractor',
+            'storage',
+            'travel_agency',
+            'insurance_agency',
+            'real_estate_agency',
+            'lawyer',
+            'accounting',
+            'atm',
+            'bank',
+            'post_office',
+            'library',
+            'school',
+            'university',
+            'primary_school',
+            'secondary_school',
+            'church',
+            'hindu_temple',
+            'mosque',
+            'synagogue',
+            'lodging',
+            'campground',
+            'rv_park',
+            'stadium',
+            'tourist_attraction',
+            'art_gallery',
+            'museum',
+            'night_club',
+            'movie_theater',
+            'bowling_alley',
+            'casino',
+            'amusement_park',
+            'aquarium',
+            'zoo'
+        ];
 
-                            // Obtener fotos
-                            const photos = [];
-                            if (place.photos && place.photos.length > 0) {
-                                // Tomar hasta 3 fotos
-                                for (let i = 0; i < Math.min(3, place.photos.length); i++) {
-                                    photos.push(place.photos[i].getUrl({ maxWidth: 800, maxHeight: 600 }));
-                                }
-                            } else {
-                                photos.push(...generatePhotos(category));
-                            }
+        const totalSearches = businessTypes.length;
+        console.log(`🔍 Iniciando búsqueda exhaustiva con ${totalSearches} tipos de negocios...`);
 
-                            // Obtener horarios formateados
-                            let hoursText = 'Horario no disponible';
-                            let isOpen = false;
+        // Función para procesar resultados con paginación
+        function fetchAllPages(request, searchName, callback) {
+            service.nearbySearch(request, function handleResults(results, status, pagination) {
+                if (status === google.maps.places.PlacesServiceStatus.OK) {
+                    console.log(`✓ ${searchName}: ${results.length} negocios encontrados`);
+                    allResults.push(...results);
 
-                            if (details && details.opening_hours) {
-                                isOpen = details.opening_hours.isOpen?.() || false;
-                                hoursText = isOpen ? '🟢 Abierto ahora' : '🔴 Cerrado';
-
-                                // Si está abierto, mostrar horario de hoy
-                                if (details.opening_hours.weekday_text && details.opening_hours.weekday_text.length > 0) {
-                                    const today = new Date().getDay();
-                                    const dayIndex = today === 0 ? 6 : today - 1; // Ajustar domingo
-                                    if (details.opening_hours.weekday_text[dayIndex]) {
-                                        hoursText += ' • ' + details.opening_hours.weekday_text[dayIndex];
-                                    }
-                                }
-                            } else if (place.opening_hours) {
-                                isOpen = place.opening_hours.isOpen?.() || false;
-                                hoursText = isOpen ? '🟢 Abierto ahora' : '🔴 Cerrado';
-                            }
-
-                            // Obtener teléfono (REAL del negocio)
-                            let phone = 'No disponible';
-                            if (details && details.formatted_phone_number) {
-                                phone = details.formatted_phone_number;
-                            } else if (details && details.international_phone_number) {
-                                phone = details.international_phone_number;
-                            }
-
-                            // Obtener dirección
-                            let address = place.vicinity || place.formatted_address || 'Dirección no disponible';
-                            if (details && details.formatted_address) {
-                                address = details.formatted_address;
-                            }
-
-                            // Obtener website
-                            let website = null;
-                            if (details && details.website) {
-                                website = details.website;
-                            } else if (place.website) {
-                                website = place.website;
-                            }
-
-                            // Obtener URL de Google Maps
-                            let googleMapsUrl = null;
-                            if (details && details.url) {
-                                googleMapsUrl = details.url;
-                            }
-
-                            // Intentar extraer email del dominio del website
-                            // Nota: Google Places API NO proporciona emails directamente
-                            // Esta es una aproximación común: info@dominio.com
-                            let email = null;
-                            if (website) {
-                                try {
-                                    const domain = new URL(website).hostname.replace('www.', '');
-                                    // Sugerir email común basado en el dominio
-                                    email = `info@${domain}`;
-                                } catch (e) {
-                                    email = null;
-                                }
-                            }
-
-                            resolveDetails({
-                                id: `google_${place.place_id}`,
-                                placeId: place.place_id,
-                                name: place.name,
-                                category: category,
-                                icon: icon,
-                                address: address,
-                                phone: phone,
-                                email: email, // Email inferido del website
-                                rating: place.rating || 0,
-                                reviewCount: place.user_ratings_total || 0,
-                                hours: hoursText,
-                                isOpen: isOpen,
-                                photos: photos,
-                                coordinates: {
-                                    lat: place.geometry.location.lat(),
-                                    lng: place.geometry.location.lng()
-                                },
-                                description: generateDescription(category),
-                                website: website,
-                                googleMapsUrl: googleMapsUrl,
-                                googleData: place,
-                                priceLevel: place.price_level || 0
-                            });
-                        });
-                    });
-                });
-
-                // Esperar a que se obtengan todos los detalles
-                let businesses = await Promise.all(businessPromises);
-
-                // Filtrar por código postal si tenemos uno buscado
-                if (state.currentPostalCode) {
-                    const searchedPostalCode = state.currentPostalCode;
-
-                    businesses = businesses.filter(business => {
-                        const businessPostalCode = extractPostalCode(business.address);
-                        const isNearby = isPostalCodeNearby(searchedPostalCode, businessPostalCode);
-
-                        // Log para debugging
-                        if (!isNearby && businessPostalCode) {
-                            console.log(`Filtrado: ${business.name} (CP: ${businessPostalCode}) - Buscado: ${searchedPostalCode}`);
-                        }
-
-                        return isNearby;
-                    });
-
-                    console.log(`Resultados filtrados: ${businesses.length} negocios en el área del CP ${searchedPostalCode}`);
+                    // Si hay más páginas y no hemos alcanzado el límite
+                    if (pagination && pagination.hasNextPage && allResults.length < CONFIG.MAX_RESULTS * 2) {
+                        console.log(`  → Siguiente página de ${searchName}...`);
+                        // IMPORTANTE: Google requiere esperar 2 segundos
+                        setTimeout(() => {
+                            pagination.nextPage(handleResults);
+                        }, 2000);
+                    } else {
+                        callback();
+                    }
+                } else if (status === google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
+                    console.log(`  ℹ ${searchName}: Sin resultados`);
+                    callback();
+                } else if (status === google.maps.places.PlacesServiceStatus.OVER_QUERY_LIMIT) {
+                    console.warn(`  ⚠ ${searchName}: Límite de consultas alcanzado`);
+                    callback();
+                } else {
+                    console.error(`  ❌ ${searchName}: Error -`, status);
+                    callback();
                 }
+            });
+        }
 
-                resolve(businesses);
+        // Realizar búsquedas con concurrencia controlada para velocidad sin error de límites
+        let currentSearchIndex = 0;
+        let activeRequests = 0;
+        const CONCURRENCY_LIMIT = 3; // 3 hilos simultáneos
 
+        function startNextRequest() {
+            // Si ya terminamos todo y no hay peticiones activas, finalizar
+            if (currentSearchIndex >= businessTypes.length && activeRequests === 0) {
+                checkIfComplete();
+                return;
+            }
 
-            } else if (status === google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
-                // Si no hay resultados, usar fallback
-                console.log('No se encontraron resultados en Google Places, usando fallback');
+            // Si ya no hay más tipos por buscar, parar este hilo
+            if (currentSearchIndex >= businessTypes.length) {
+                return;
+            }
+
+            // Si alcanzamos el límite de concurrencia, esperar
+            if (activeRequests >= CONCURRENCY_LIMIT) {
+                return;
+            }
+
+            // Iniciar nueva petición
+            const type = businessTypes[currentSearchIndex];
+            currentSearchIndex++;
+            activeRequests++;
+
+            const searchName = type ? `Tipo: ${type}` : 'General';
+            const request = {
+                location: new google.maps.LatLng(coordinates.lat, coordinates.lng),
+                radius: CONFIG.SEARCH_RADIUS
+            };
+
+            if (type) {
+                request.type = type;
+            }
+
+            // Procesar
+            fetchAllPages(request, searchName, () => {
+                activeRequests--;
+                searchesCompleted++;
+                startNextRequest(); // Al terminar, intentar iniciar otra
+            });
+
+            // Intentar iniciar otra inmediatamente si hay hueco
+            startNextRequest();
+        }
+
+        // Iniciar el pool de peticiones
+        startNextRequest();
+
+        // Verificar si todas las búsquedas han terminado
+        function checkIfComplete() {
+            console.log(`\n📊 RESUMEN DE BÚSQUEDA:`);
+            console.log(`   Total de búsquedas: ${searchesCompleted}/${totalSearches}`);
+            console.log(`   Resultados brutos: ${allResults.length}`);
+
+            if (allResults.length === 0) {
+                console.log('⚠ No se encontraron resultados, usando fallback');
                 resolve(generateMockBusinesses(coordinates, 10));
             } else {
-                console.error('Error en Google Places:', status);
-                // Fallback a OpenStreetMap
-                searchWithOpenStreetMap(coordinates).then(resolve).catch(reject);
+                // Eliminar duplicados por place_id
+                const uniqueResults = [];
+                const seenIds = new Set();
+
+                for (const place of allResults) {
+                    if (!seenIds.has(place.place_id)) {
+                        seenIds.add(place.place_id);
+                        uniqueResults.push(place);
+                    }
+                }
+
+                console.log(`   Duplicados eliminados: ${allResults.length - uniqueResults.length}`);
+                console.log(`   Negocios únicos: ${uniqueResults.length}`);
+                console.log(`\n🔄 Procesando detalles de ${Math.min(uniqueResults.length, CONFIG.MAX_RESULTS)} negocios... (esto puede tardar unos segundos)\n`);
+
+                processAllResults(uniqueResults, service, resolve);
             }
-        });
+        }
     });
+}
+
+// Procesar lista completa de resultados y obtener detalles por lotes
+// Procesar lista completa de resultados y obtener detalles por lotes con UI progresiva
+async function processAllResults(results, service, resolve) {
+    // Limitar al máximo configurado
+    const finalResults = results.slice(0, CONFIG.MAX_RESULTS);
+
+    // Preparar UI para carga progresiva
+    hideLoading();
+    const resultsSection = document.getElementById('resultsSection');
+    resultsSection.classList.remove('hidden');
+    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    const businessList = document.getElementById('businessList');
+    businessList.innerHTML = ''; // Limpiar lista anterior
+    state.businesses = []; // Reiniciar estado
+
+    // Crear indicador de progreso
+    let progressDiv = document.getElementById('searchProgress');
+    if (progressDiv) progressDiv.remove();
+
+    progressDiv = document.createElement('div');
+    progressDiv.id = 'searchProgress';
+    progressDiv.className = 'search-progress';
+    progressDiv.style.cssText = 'padding: 15px; text-align: center; color: #666; margin-bottom: 20px; background: rgba(255,255,255,0.8); border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.05); animation: fadeIn 0.3s ease;';
+    businessList.parentNode.insertBefore(progressDiv, businessList);
+
+    const BATCH_SIZE = 5; // Lotes pequeños para feedback rápido
+    let processedCount = 0;
+
+    console.log(`\n🔄 Procesando ${finalResults.length} negocios en lotes de ${BATCH_SIZE}...`);
+
+    for (let i = 0; i < finalResults.length; i += BATCH_SIZE) {
+        // Actualizar progreso
+        const percent = Math.round((i / finalResults.length) * 100);
+        progressDiv.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                <div class="loading-spinner" style="width: 24px; height: 24px; border-width: 3px; border-color: var(--primary) transparent var(--primary) transparent;"></div>
+                <div style="font-weight: 500; font-size: 0.95rem;">Analizando: ${Math.min(i + BATCH_SIZE, finalResults.length)} / ${finalResults.length} candidatos</div>
+                <div style="font-size: 0.85rem; color: #888;">Encontrados en CP ${state.currentPostalCode}: <b style="color: var(--primary);">${state.businesses.length}</b></div>
+                <div style="width: 100%; height: 4px; background: #eee; border-radius: 2px; margin-top: 5px; overflow: hidden;">
+                    <div style="width: ${percent}%; height: 100%; background: var(--primary); transition: width 0.3s ease;"></div>
+                </div>
+            </div>
+        `;
+
+        const batch = finalResults.slice(i, i + BATCH_SIZE);
+        const batchPromises = batch.map(place => {
+            return new Promise(resolveDetails => {
+                service.getDetails({
+                    placeId: place.place_id,
+                    fields: ['name', 'formatted_phone_number', 'international_phone_number',
+                        'website', 'opening_hours', 'formatted_address', 'url']
+                }, (details, detailsStatus) => {
+                    // Si falla, usar datos básicos para no detener el proceso
+                    const safeDetails = (detailsStatus === google.maps.places.PlacesServiceStatus.OK && details) ? details : {};
+
+                    // Obtener categoría e icono
+                    const { category, icon } = getBusinessCategoryFromGoogleTypes(place.types);
+
+                    // Obtener fotos
+                    const photos = [];
+                    if (place.photos && place.photos.length > 0) {
+                        for (let j = 0; j < Math.min(3, place.photos.length); j++) {
+                            photos.push(place.photos[j].getUrl({ maxWidth: 800, maxHeight: 600 }));
+                        }
+                    } else {
+                        photos.push(...generatePhotos(category));
+                    }
+
+                    // Obtener horarios formateados
+                    let hoursText = 'Horario no disponible';
+                    let isOpen = false;
+                    if (safeDetails.opening_hours) {
+                        isOpen = safeDetails.opening_hours.isOpen?.() || false;
+                        hoursText = isOpen ? '🟢 Abierto ahora' : '🔴 Cerrado';
+                        if (safeDetails.opening_hours.weekday_text && safeDetails.opening_hours.weekday_text.length > 0) {
+                            const today = new Date().getDay();
+                            const dayIndex = today === 0 ? 6 : today - 1;
+                            if (safeDetails.opening_hours.weekday_text[dayIndex]) {
+                                hoursText += ' • ' + safeDetails.opening_hours.weekday_text[dayIndex];
+                            }
+                        }
+                    } else if (place.opening_hours) {
+                        isOpen = place.opening_hours.isOpen?.() || false;
+                        hoursText = isOpen ? '🟢 Abierto ahora' : '🔴 Cerrado';
+                    }
+
+                    // Obtener teléfono
+                    let phone = safeDetails.formatted_phone_number || safeDetails.international_phone_number || 'No disponible';
+
+                    // Obtener dirección
+                    let address = safeDetails.formatted_address || place.vicinity || 'Dirección no disponible';
+
+                    // Obtener website
+                    let website = safeDetails.website || place.website || null;
+
+                    // URL Maps
+                    let googleMapsUrl = safeDetails.url || null;
+
+                    // Email estimado
+                    let email = null;
+                    if (website) {
+                        try {
+                            const domain = new URL(website).hostname.replace('www.', '');
+                            email = `info@${domain}`;
+                        } catch (e) {
+                            email = null;
+                        }
+                    }
+
+                    resolveDetails({
+                        id: `google_${place.place_id}`,
+                        placeId: place.place_id,
+                        name: place.name,
+                        category: category,
+                        icon: icon,
+                        address: address,
+                        phone: phone,
+                        email: email,
+                        rating: place.rating || 0,
+                        reviewCount: place.user_ratings_total || 0,
+                        hours: hoursText,
+                        isOpen: isOpen,
+                        photos: photos,
+                        coordinates: {
+                            lat: place.geometry.location.lat(),
+                            lng: place.geometry.location.lng()
+                        },
+                        description: generateDescription(category),
+                        website: website,
+                        googleMapsUrl: googleMapsUrl,
+                        googleData: place,
+                        priceLevel: place.price_level || 0
+                    });
+                });
+            });
+        });
+
+        // Esperar a este lote
+        const batchResults = await Promise.all(batchPromises);
+
+        // Filtrar y renderizar inmediatamente
+        const validBatch = batchResults.filter(business => {
+            const businessPostalCode = extractPostalCode(business.address);
+            return isPostalCodeNearby(state.currentPostalCode, businessPostalCode);
+        });
+
+        if (validBatch.length > 0) {
+            state.businesses.push(...validBatch);
+
+            // Renderizar los nuevos
+            validBatch.forEach(business => {
+                // Usamos el índice actual global para la animación escalonada
+                const globalIndex = state.businesses.length - 1;
+                const card = createBusinessCard(business, globalIndex % 10); // %10 para reiniciar retardos de animación
+
+                // Asegurar que sea visible con animación
+                card.style.opacity = '0';
+                card.style.animation = 'fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards';
+
+                businessList.appendChild(card);
+            });
+        }
+
+        // Pequeña pausa para no bloquear la UI y permitir render
+        await new Promise(r => setTimeout(r, 10));
+    }
+
+    // Finalizar
+    progressDiv.innerHTML = `
+        <div style="padding: 10px; background: rgba(16, 185, 129, 0.1); color: #059669; border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 8px;">
+            ✅ <b>Búsqueda Finalizada</b><br>
+            Se encontraron ${state.businesses.length} negocios en el CP ${state.currentPostalCode}.
+        </div>
+    `;
+
+    // Auto-ocultar el progreso después de unos segundos
+    setTimeout(() => {
+        progressDiv.style.opacity = '0';
+        progressDiv.style.transition = 'opacity 0.5s ease';
+        setTimeout(() => progressDiv.remove(), 500);
+    }, 4000);
+
+    console.log(`\n📊 RESULTADO FINAL: ${state.businesses.length} negocios encontrados.`);
+
+    // Resolvemos con la lista completa para que el flujo principal continúe (aunque ya hemos renderizado)
+    resolve(state.businesses);
 }
 
 // Obtener categoría desde los tipos de Google Places
@@ -814,6 +1042,14 @@ function displayResults(businesses) {
 // Display list view
 function displayListView(businesses) {
     const businessList = document.getElementById('businessList');
+
+    // Optimización: Si ya tenemos la cantidad correcta de elementos (gracias al streaming), 
+    // no hacemos re-render para evitar parpadeos.
+    // Verificamos > 0 para permitir limpiar si businesses está vacío.
+    if (businesses.length > 0 && businessList.children.length === businesses.length) {
+        return;
+    }
+
     businessList.innerHTML = '';
 
     businesses.forEach((business, index) => {
